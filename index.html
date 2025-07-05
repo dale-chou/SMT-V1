@@ -259,10 +259,21 @@
         document.addEventListener('DOMContentLoaded', () => {
             
             const mockData = [
-                { id: 'STD001', partNumbers: [{pcbNo: 'QB28-10 V11 TOP', partNo: 'G49080953C0'}, {pcbNo: 'QB28-10 V11 BOT', partNo: 'G49080953C0'}, {pcbNo: 'QB18-11 TOP', partNo: 'G49082953C0'}, {pcbNo: 'QB18-11 BOT', partNo: 'G49082953C0'}, {pcbNo: 'EXTRA-01', partNo: 'EXTRA-PART'}], thickness: 0.1, location: '001', currentLocation: '001', status: '已儲存', subStatus: '', usageCount: 15, remarks: '清潔後有些微殘膠', files: { coordinate: 'STD001_coord.txt', gerber: 'P-1A2B3C.zip', pcbDrawing: null, spi: 'STD001.csv', inspectionSheet: 'STD001_check.pdf' }, scrapReason: '' },
-                { id: 'STD002', partNumbers: [{pcbNo: 'P-4D5E6F', partNo: 'B-LMN-002'}], thickness: 0.12, location: '002', currentLocation: 'S1', status: '已取出', subStatus: 'S1線', usageCount: 88, remarks: '', files: { coordinate: null, gerber: null, pcbDrawing: null, spi: null, inspectionSheet: null }, scrapReason: '' },
-                { id: 'STD003', partNumbers: [{pcbNo: 'P-7G8H9I', partNo: 'C-PQR-003'}], thickness: 0.15, location: '003', currentLocation: '003', status: '已儲存', subStatus: '', usageCount: 5, remarks: '', files: { coordinate: 'STD003_coord.txt', gerber: 'P-7G8H9I.zip', pcbDrawing: 'P-7G8H9I.jpg', spi: 'STD003_spi.csv', inspectionSheet: 'STD003_check.pdf' }, scrapReason: '' },
-                { id: 'STD009', partNumbers: [{pcbNo: 'P-G7H8I9', partNo: 'C-PQR-003'}], thickness: 0.15, location: '009', currentLocation: '報廢區', status: '報廢', subStatus: '', usageCount: 120, remarks: '張力嚴重不足，已達使用壽命上限', scrappedDate: new Date(), files: { coordinate: null, gerber: null, pcbDrawing: null, spi: null, inspectionSheet: null }, scrapReason: '鋼網破損' },
+                { id: '114010616', partNumbers: [{pcbNo: 'HB52-12 V14 TOP', partNo: ''}, {pcbNo: 'HB52-12 V14 BOT', partNo: ''}], thickness: 0.12, location: '381', currentLocation: '381', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113111821', partNumbers: [{pcbNo: 'HB50-12 V11 TOP', partNo: ''}, {pcbNo: 'HB50-12 V11 BOT', partNo: ''}], thickness: 0.12, location: '386', currentLocation: '386', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113022709', partNumbers: [{pcbNo: 'EB16-10 TOP', partNo: ''}, {pcbNo: 'QB66-12 V11 TOP', partNo: ''}], thickness: 0.15, location: '389', currentLocation: '389', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113112213', partNumbers: [{pcbNo: 'QB66-12 V10 TOP', partNo: ''}, {pcbNo: 'EB17-10 BOT', partNo: ''}], thickness: 0.12, location: '390', currentLocation: '390', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113022316', partNumbers: [{pcbNo: 'EB17-10 TOP', partNo: ''}, {pcbNo: 'QB65-13 V11 TOP', partNo: ''}], thickness: 0.15, location: '391', currentLocation: '391', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113112910', partNumbers: [{pcbNo: 'QB65-13 V10 TOP', partNo: ''}, {pcbNo: 'QB65-13 V10 BOT', partNo: ''}], thickness: 0.12, location: '392', currentLocation: '392', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113032812', partNumbers: [{pcbNo: 'CB52-11-V10 TOP', partNo: ''}, {pcbNo: 'SB28-10 BOT', partNo: ''}], thickness: 0.15, location: '393', currentLocation: '393', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113032908', partNumbers: [{pcbNo: 'SB28-10 TOP', partNo: ''}, {pcbNo: 'SB29-10 BOT', partNo: ''}], thickness: 0.15, location: '394', currentLocation: '394', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113032909', partNumbers: [{pcbNo: 'SB29-10 TOP', partNo: ''}, {pcbNo: 'SB30-10 BOT', partNo: ''}], thickness: 0.15, location: '395', currentLocation: '395', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113032910', partNumbers: [{pcbNo: 'SB30-10 TOP', partNo: ''}, {pcbNo: 'SB31-10 BOT', partNo: ''}], thickness: 0.15, location: '396', currentLocation: '396', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113032911', partNumbers: [{pcbNo: 'SB31-10 TOP', partNo: ''}, {pcbNo: 'SB32-10 BOT', partNo: ''}], thickness: 0.15, location: '397', currentLocation: '397', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113032912', partNumbers: [{pcbNo: 'SB32-10 TOP', partNo: ''}, {pcbNo: 'SB33-10 BOT', partNo: ''}], thickness: 0.15, location: '398', currentLocation: '398', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113032913', partNumbers: [{pcbNo: 'SB33-10 TOP', partNo: ''}, {pcbNo: 'HB68-11 V10 TOP', partNo: ''}], thickness: 0.15, location: '399', currentLocation: '399', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113050310', partNumbers: [{pcbNo: 'HB68-11 V1.0 V10 TOP', partNo: ''}, {pcbNo: 'P58-10 TOP', partNo: ''}], thickness: 0.15, location: '400', currentLocation: '400', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
+                { id: '113042614', partNumbers: [{pcbNo: '空', partNo: ''}, {pcbNo: 'FB26-11 TOP', partNo: ''}], thickness: 0.15, location: '401', currentLocation: '401', status: '已儲存', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' },
             ];
             
             const mockLogs = [];
@@ -444,7 +455,7 @@
                 );
 
                 if (filteredStencils.length === 0) {
-                    tableBody.innerHTML = `<tr><td colspan="8" class="text-center p-8 text-slate-500">找不到符合條件的在役鋼網</td></tr>`;
+                    tableBody.innerHTML = `<tr><td colspan="7" class="text-center p-8 text-slate-500">找不到符合條件的在役鋼網</td></tr>`;
                     return;
                 }
 
@@ -657,7 +668,7 @@
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                                 <div>
                                     <label class="block text-sm font-medium text-slate-600 mb-1">鋼網編號</label>
-                                    <input type="text" name="id" value="${data.id}" ${!isAdding ? '' : 'readonly'} class="w-full p-2 border border-slate-300 rounded-md bg-white disabled:bg-slate-100" placeholder="例如: 113052407">
+                                    <input type="text" name="id" value="${data.id}" class="w-full p-2 border border-slate-300 rounded-md bg-white" placeholder="例如: 113052407">
                                 </div>
                                 <div class="grid grid-cols-2 gap-2">
                                     <div>
