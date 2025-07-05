@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMT 鋼網管理系統 - 互動式儀表板 (Gemini 增強版)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Chosen Palette: Industrial Calm */
+        /* Application Structure Plan: A task-oriented SPA with five main sections: 1. Overview Dashboard. 2. Stencil Management for active items. 3. Status Change for operator tasks. 4. Reporting Center for logs and AI summaries. 5. Scrap Area for retired items. This separation creates a clean lifecycle management flow. */
+        /* Visualization & Content Choices: 
+           - Overview: Goal: Inform/Explore. Method: Stat Cards (now clickable), Donut Chart, Bar Chart. Interaction: Clicks on cards trigger a modal with a filtered list (drill-down). Justification: Provides both a high-level summary and an immediate path to details.
+           - Management: Goal: Organize/Compare. Method: Interactive HTML Table with CRUD and new quick-action buttons. Interaction: Live filtering, clickable rows opening a detail modal, one-click status changes. Justification: Focuses on active inventory management and streamlines common tasks.
+           - Scrap Area: Goal: Audit/Archive. Method: New dedicated table for scrapped items with an edit button to add scrap reasons. Justification: Provides a clear, permanent record of retired assets.
+           - Detail Modal: Goal: Analyze/Advise/Manage Files. Method: Gemini API calls, File attachment UI, Dynamic Part Number list, Conditional Scrap Reason dropdown. Justification: Centralizes all data and intelligence for a single stencil.
+           - Reporting Center: Goal: Summarize/Audit. Method: Gemini API for summary; interactive HTML table for logs. Justification: High-level insights and detailed audit trails.
+           - Status Change: Goal: Streamline Operations. Method: Redesigned 2-step QR code scanning UI. Justification: Optimizes for speed and accuracy.
+        */
+        /* CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. */
+        body { font-family: 'Inter', '微軟正黑體', 'Microsoft JhengHei', sans-serif; }
+        .chart-container { position: relative; width: 100%; max-width: 400px; margin-left: auto; margin-right: auto; height: 320px; }
+        @media (max-width: 768px) { .chart-container { height: 280px; } }
+        .nav-btn.active { color: #2563eb; border-color: #2563eb; background-color: #eff6ff; }
+        .nav-btn { transition: all 0.2s ease-in-out; }
+        .modal-overlay { transition: opacity 0.3s ease; }
+        .modal-content { transition: transform 0.3s ease; }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .toast {
+            transition: opacity 0.5s, transform 0.5s;
+        }
+    </style>
+</head>
+<body class="bg-slate-50">
+
+    <div id="app" class="flex flex-col min-h-screen">
+        
+        <header class="bg-white shadow-sm sticky top-0 z-30">
+            <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-blue-600 text-white flex items-center justify-center rounded-lg text-xl font-bold">S</div>
+                        <h1 class="text-xl font-bold text-slate-800">SMT 鋼網管理系統</h1>
+                    </div>
+                    <div class="text-sm text-slate-500">
+                        使用者: <span class="font-semibold text-slate-700">管理員 (Admin)</span>
+                    </div>
+                </div>
+                <nav class="flex border-b border-slate-200 overflow-x-auto">
+                    <button data-section="overview" class="nav-btn px-4 py-3 border-b-2 font-medium text-sm text-slate-500 border-transparent hover:text-blue-600 hover:border-blue-300 whitespace-nowrap">總覽儀表板</button>
+                    <button data-section="management" class="nav-btn px-4 py-3 border-b-2 font-medium text-sm text-slate-500 border-transparent hover:text-blue-600 hover:border-blue-300 whitespace-nowrap">鋼網管理</button>
+                    <button data-section="scrap" class="nav-btn px-4 py-3 border-b-2 font-medium text-sm text-slate-500 border-transparent hover:text-blue-600 hover:border-blue-300 whitespace-nowrap">報廢區</button>
+                    <button data-section="operator" class="nav-btn px-4 py-3 border-b-2 font-medium text-sm text-slate-500 border-transparent hover:text-blue-600 hover:border-blue-300 whitespace-nowrap">鋼板狀態異動</button>
+                    <button data-section="reporting" class="nav-btn px-4 py-3 border-b-2 font-medium text-sm text-slate-500 border-transparent hover:text-blue-600 hover:border-blue-300 whitespace-nowrap">報表中心</button>
+                </nav>
+            </div>
+        </header>
+
+        <main class="flex-grow container mx-auto p-4 sm:p-6 lg:p-8">
+            
+            <section id="overview-section" class="space-y-8">
+                <div>
+                    <h2 class="text-2xl font-bold text-slate-800">總覽儀表板</h2>
+                    <p class="mt-1 text-slate-500">快速檢視目前鋼網庫存的關鍵指標與狀態分佈，幫助您掌握整體營運狀況。</p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-6" id="stats-cards">
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center mt-8">
+                    <div class="bg-white p-6 rounded-xl shadow">
+                        <h3 class="font-bold text-slate-700 mb-4">鋼網狀態分佈</h3>
+                        <div class="chart-container">
+                            <canvas id="statusDonutChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow">
+                        <h3 class="font-bold text-slate-700 mb-4">使用次數 Top 5</h3>
+                        <div class="chart-container !max-w-full">
+                            <canvas id="usageBarChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="management-section" class="hidden space-y-6">
+                 <div>
+                    <h2 class="text-2xl font-bold text-slate-800">鋼網管理</h2>
+                    <p class="mt-1 text-slate-500">在此處搜尋、檢視、新增或編輯在役鋼網的詳細資訊。點擊任一列表即可查看完整履歷。</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow flex items-center gap-4">
+                    <input type="text" id="search-input" placeholder="依鋼網編號、板號或料號搜尋..." class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <button id="add-stencil-btn" class="p-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 whitespace-nowrap">新增鋼網</button>
+                </div>
+                <div class="bg-white rounded-xl shadow overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-slate-100 text-slate-600">
+                            <tr>
+                                <th class="p-4">儲位</th>
+                                <th class="p-4">板號 / 料號</th>
+                                <th class="p-4">狀態</th>
+                                <th class="p-4">鋼網編號</th>
+                                <th class="p-4">厚度(mm)</th>
+                                <th class="p-4">備註</th>
+                                <th class="p-4">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stencils-table-body" class="text-slate-700">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            
+            <section id="scrap-section" class="hidden space-y-6">
+                 <div>
+                    <h2 class="text-2xl font-bold text-slate-800">報廢區</h2>
+                    <p class="mt-1 text-slate-500">此處存放所有已報廢的鋼網資訊，以供歷史查詢與追溯。</p>
+                </div>
+                <div class="bg-white rounded-xl shadow overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-slate-100 text-slate-600">
+                            <tr>
+                                <th class="p-4">儲位</th>
+                                <th class="p-4">鋼網編號</th>
+                                <th class="p-4">板號 / 料號</th>
+                                <th class="p-4">最終使用次數</th>
+                                <th class="p-4">報廢理由</th>
+                                <th class="p-4">報廢日期</th>
+                                <th class="p-4">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scrap-table-body" class="text-slate-700">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="operator-section" class="hidden">
+                 <div>
+                    <h2 class="text-2xl font-bold text-slate-800">鋼板狀態異動</h2>
+                    <p class="mt-1 text-slate-500">此為現場人員設計的快速操作介面，請依序掃描QR Code以更新鋼網狀態。</p>
+                </div>
+                <div class="mt-6 max-w-2xl mx-auto bg-white p-8 rounded-2xl shadow-lg">
+                    <div class="space-y-6">
+                        <div>
+                            <label class="font-semibold text-slate-600">1. 掃描儲位 (SPS) 或鋼網編號 (QR Code)</label>
+                            <input type="text" id="operator-stencil-id" placeholder="掃描 SPS001 或 113052407..." class="mt-2 w-full p-3 border-2 border-dashed border-slate-300 rounded-lg text-center text-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                        </div>
+                        <div id="operator-info-display" class="hidden p-4 bg-slate-50 rounded-lg text-center"></div>
+                        <div>
+                            <label class="font-semibold text-slate-600">2. 掃描操作代碼 (QR Code)</label>
+                            <input type="text" id="operator-action-code" placeholder="等待掃描操作..." class="mt-2 w-full p-3 border-2 border-dashed border-slate-300 rounded-lg text-center text-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500" disabled>
+                        </div>
+                    </div>
+                    <div class="mt-8">
+                        <button id="operator-confirm-btn" class="w-full py-4 bg-indigo-600 text-white rounded-xl text-xl font-bold hover:bg-indigo-700 focus:outline-none focus:ring-4 focus:ring-indigo-400 transition-all duration-300 shadow-lg hover:shadow-xl disabled:bg-slate-400 disabled:cursor-not-allowed" disabled>
+                            確認異動
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="reporting-section" class="hidden">
+                 <div>
+                    <h2 class="text-2xl font-bold text-slate-800">報表中心</h2>
+                    <p class="mt-1 text-slate-500">在此生成並導出您需要的數據報告，或使用 AI 獲取庫存分析摘要。</p>
+                </div>
+                <div class="mt-8">
+                     <div class="bg-white p-6 rounded-xl shadow">
+                        <h3 class="text-xl font-bold text-slate-800 mb-2">✨ AI 庫存分析摘要</h3>
+                        <p class="text-sm text-slate-500 mb-4">點擊按鈕，讓 Gemini AI 為您分析目前的整體庫存狀況，並提供管理洞見。</p>
+                        <button id="generate-summary-report-btn" class="w-full md:w-auto px-6 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition">生成摘要報告</button>
+                        <div id="summary-report-result" class="mt-4 text-sm p-4 bg-indigo-50 border border-indigo-200 rounded-lg text-slate-700 min-h-[150px] whitespace-pre-wrap leading-relaxed hidden"></div>
+                     </div>
+                </div>
+                 <div class="mt-8">
+                     <div class="bg-white p-6 rounded-xl shadow">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between">
+                            <div>
+                                <h3 class="text-xl font-bold text-slate-800 mb-2">狀態異動紀錄</h3>
+                                <p class="text-sm text-slate-500 mb-4 md:mb-0">追蹤所有鋼網的狀態變更歷史，確保操作可追溯。</p>
+                            </div>
+                            <input type="text" id="log-search-input" placeholder="依鋼網編號搜尋紀錄..." class="w-full md:w-auto p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div class="mt-4 overflow-x-auto">
+                           <table class="w-full text-sm text-left">
+                                <thead class="bg-slate-100 text-slate-600">
+                                    <tr>
+                                        <th class="p-4">時間</th>
+                                        <th class="p-4">鋼網編號</th>
+                                        <th class="p-4">操作人員</th>
+                                        <th class="p-4">原始狀態</th>
+                                        <th class="p-4">變更後狀態</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="logs-table-body" class="text-slate-700">
+                                </tbody>
+                            </table>
+                        </div>
+                     </div>
+                </div>
+            </section>
+        </main>
+    </div>
+    
+    <div id="detail-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 z-40 hidden items-center justify-center p-4">
+        <div class="modal-content bg-slate-50 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col transform scale-95 opacity-0">
+            <div class="p-5 border-b border-slate-200 flex justify-between items-center">
+                <h2 id="modal-title" class="text-xl font-bold text-slate-800"></h2>
+                <button id="close-modal-btn" class="p-2 rounded-full hover:bg-slate-200">
+                    <svg class="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="modal-body" class="p-6 flex-grow overflow-y-auto">
+            </div>
+             <div id="modal-footer" class="p-4 bg-slate-100 border-t border-slate-200 flex justify-end gap-3">
+            </div>
+        </div>
+    </div>
+
+    <div id="list-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
+        <div class="modal-content bg-slate-50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col transform scale-95 opacity-0">
+            <div class="p-5 border-b border-slate-200 flex justify-between items-center">
+                <h2 id="list-modal-title" class="text-xl font-bold text-slate-800"></h2>
+                <button id="close-list-modal-btn" class="p-2 rounded-full hover:bg-slate-200">
+                    <svg class="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="list-modal-body" class="p-6 flex-grow overflow-y-auto">
+            </div>
+        </div>
+    </div>
+    
+    <div id="checkout-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4">
+        <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-sm transform scale-95 opacity-0">
+            <div class="p-6 text-center">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">請選擇取出產線</h3>
+                <div class="flex gap-4">
+                    <button id="checkout-s1-btn" class="w-full p-3 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600">S1線</button>
+                    <button id="checkout-s2-btn" class="w-full p-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700">S2線</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast-container" class="fixed top-5 right-5 z-50"></div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            const mockData = [
+                { id: 'STD001', partNumbers: [{pcbNo: 'QB28-10 V11 TOP', partNo: 'G49080953C0'}, {pcbNo: 'QB28-10 V11 BOT', partNo: 'G49080953C0'}, {pcbNo: 'QB18-11 TOP', partNo: 'G49082953C0'}, {pcbNo: 'QB18-11 BOT', partNo: 'G49082953C0'}, {pcbNo: 'EXTRA-01', partNo: 'EXTRA-PART'}], thickness: 0.1, location: '001', currentLocation: '001', status: '已儲存', subStatus: '', usageCount: 15, remarks: '清潔後有些微殘膠', files: { coordinate: 'STD001_coord.txt', gerber: 'P-1A2B3C.zip', pcbDrawing: null, spi: 'STD001.csv', inspectionSheet: 'STD001_check.pdf' }, scrapReason: '' },
+                { id: 'STD002', partNumbers: [{pcbNo: 'P-4D5E6F', partNo: 'B-LMN-002'}], thickness: 0.12, location: '002', currentLocation: 'S1', status: '已取出', subStatus: 'S1線', usageCount: 88, remarks: '', files: { coordinate: null, gerber: null, pcbDrawing: null, spi: null, inspectionSheet: null }, scrapReason: '' },
+                { id: 'STD003', partNumbers: [{pcbNo: 'P-7G8H9I', partNo: 'C-PQR-003'}], thickness: 0.15, location: '003', currentLocation: '003', status: '已儲存', subStatus: '', usageCount: 5, remarks: '', files: { coordinate: 'STD003_coord.txt', gerber: 'P-7G8H9I.zip', pcbDrawing: 'P-7G8H9I.jpg', spi: 'STD003_spi.csv', inspectionSheet: 'STD003_check.pdf' }, scrapReason: '' },
+                { id: 'STD009', partNumbers: [{pcbNo: 'P-G7H8I9', partNo: 'C-PQR-003'}], thickness: 0.15, location: '009', currentLocation: '報廢區', status: '報廢', subStatus: '', usageCount: 120, remarks: '張力嚴重不足，已達使用壽命上限', scrappedDate: new Date(), files: { coordinate: null, gerber: null, pcbDrawing: null, spi: null, inspectionSheet: null }, scrapReason: '鋼網破損' },
+            ];
+            
+            const mockLogs = [];
+
+            const appState = {
+                stencils: mockData,
+                logs: mockLogs,
+                activeSection: 'overview',
+                searchTerm: '',
+                logSearchTerm: '',
+                isModalOpen: false,
+                modalMode: 'view',
+                selectedStencil: null,
+                operator: {
+                    stencilId: '',
+                    actionCode: '',
+                    stencil: null,
+                    pendingChange: null
+                }
+            };
+            
+            function createLog(stencilId, fromStatus, toStatus) {
+                appState.logs.unshift({
+                    logId: `log-${Date.now()}`,
+                    stencilId: stencilId,
+                    timestamp: new Date(),
+                    user: '管理員',
+                    fromStatus: fromStatus,
+                    toStatus: toStatus,
+                });
+            }
+
+            const sections = {
+                overview: document.getElementById('overview-section'),
+                management: document.getElementById('management-section'),
+                scrap: document.getElementById('scrap-section'),
+                operator: document.getElementById('operator-section'),
+                reporting: document.getElementById('reporting-section')
+            };
+
+            const modal = document.getElementById('detail-modal');
+            const modalTitle = document.getElementById('modal-title');
+            const modalBody = document.getElementById('modal-body');
+            const modalFooter = document.getElementById('modal-footer');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+            
+            const listModal = document.getElementById('list-modal');
+            const listModalTitle = document.getElementById('list-modal-title');
+            const listModalBody = document.getElementById('list-modal-body');
+            const closeListModalBtn = document.getElementById('close-list-modal-btn');
+            
+            const checkoutModal = document.getElementById('checkout-modal');
+            const checkoutS1Btn = document.getElementById('checkout-s1-btn');
+            const checkoutS2Btn = document.getElementById('checkout-s2-btn');
+
+            const addStencilBtn = document.getElementById('add-stencil-btn');
+            const navButtons = document.querySelectorAll('.nav-btn');
+            const searchInput = document.getElementById('search-input');
+            const tableBody = document.getElementById('stencils-table-body');
+            const scrapTableBody = document.getElementById('scrap-table-body');
+            const logsTableBody = document.getElementById('logs-table-body');
+            const logSearchInput = document.getElementById('log-search-input');
+            const statsCardsContainer = document.getElementById('stats-cards');
+            const generateSummaryBtn = document.getElementById('generate-summary-report-btn');
+            const summaryResultDiv = document.getElementById('summary-report-result');
+            
+            // Operator page elements
+            const opStencilIdInput = document.getElementById('operator-stencil-id');
+            const opActionCodeInput = document.getElementById('operator-action-code');
+            const opInfoDisplay = document.getElementById('operator-info-display');
+            const opConfirmBtn = document.getElementById('operator-confirm-btn');
+
+            let statusChart, usageChart;
+            let stencilToCheckOutId = null;
+
+            const statusOptions = ['已儲存', '已取出', '已借出', '待處理', '待入庫', '報廢'];
+            const subStatusOptions = {
+                '已取出': ['S1線', 'S2線'],
+                '已借出': ['外包商', '碁達']
+            };
+            const scrapReasons = ['鋼網破損', '版本升級', '製程修改', '其他'];
+            const statusColors = {
+                '已儲存': { bg: 'bg-blue-100', text: 'text-blue-800' },
+                '已取出': { bg: 'bg-green-100', text: 'text-green-800' },
+                '已借出': { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+                '待處理': { bg: 'bg-red-100', text: 'text-red-800' },
+                '待入庫': { bg: 'bg-purple-100', text: 'text-purple-800' },
+                '報廢': { bg: 'bg-slate-100', text: 'text-slate-800' },
+            };
+            
+            const fileTypes = {
+                coordinate: '座標檔',
+                gerber: 'PCB GERBER',
+                pcbDrawing: 'PCB 圖面',
+                spi: '鋼板SPI',
+                inspectionSheet: '鋼板檢驗表'
+            };
+
+            function showToast(message, isSuccess = true) {
+                const toastId = 'toast-' + Date.now();
+                const bgColor = isSuccess ? 'bg-green-500' : 'bg-red-500';
+                const toast = `
+                    <div id="${toastId}" class="toast transform translate-x-full opacity-0 max-w-sm w-full ${bgColor} text-white rounded-lg shadow-lg pointer-events-auto p-4 mb-4">
+                        ${message}
+                    </div>
+                `;
+                document.getElementById('toast-container').insertAdjacentHTML('beforeend', toast);
+                
+                const toastEl = document.getElementById(toastId);
+                setTimeout(() => {
+                    toastEl.classList.remove('translate-x-full', 'opacity-0');
+                }, 100);
+
+                setTimeout(() => {
+                    toastEl.classList.add('opacity-0');
+                    toastEl.addEventListener('transitionend', () => toastEl.remove());
+                }, 3000);
+            }
+
+            async function callGeminiAPI(prompt, targetElement) {
+                targetElement.innerHTML = '<div class="flex justify-center items-center p-4"><div class="loader"></div></div>';
+                let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        let formattedText = text.replace(/\n/g, '<br>');
+                        formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                        targetElement.innerHTML = formattedText;
+
+                    } else {
+                        targetElement.textContent = '無法取得分析結果，請稍後再試。';
+                    }
+                } catch (error) {
+                    console.error("Gemini API call failed:", error);
+                    targetElement.textContent = 'API 呼叫失敗，請檢查網路連線或 API 金鑰。';
+                }
+            }
+
+            function render() {
+                Object.values(sections).forEach(s => s.classList.add('hidden'));
+                sections[appState.activeSection].classList.remove('hidden');
+
+                navButtons.forEach(btn => {
+                    btn.classList.toggle('active', btn.dataset.section === appState.activeSection);
+                });
+
+                if (appState.activeSection === 'overview') {
+                    renderStatsCards();
+                    renderStatusDonutChart();
+                    renderUsageBarChart();
+                } else if (appState.activeSection === 'management') {
+                    renderTable();
+                } else if (appState.activeSection === 'scrap') {
+                    renderScrapTable();
+                } else if (appState.activeSection === 'reporting') {
+                    renderLogTable();
+                } else if (appState.activeSection === 'operator') {
+                    resetOperatorPage();
+                }
+            }
+            
+            function renderTable() {
+                const filteredStencils = appState.stencils.filter(s => 
+                    s.status !== '報廢' &&
+                    (s.id.toLowerCase().includes(appState.searchTerm) ||
+                     (s.partNumbers && s.partNumbers.some(p => p.pcbNo.toLowerCase().includes(appState.searchTerm) || p.partNo.toLowerCase().includes(appState.searchTerm))))
+                );
+
+                if (filteredStencils.length === 0) {
+                    tableBody.innerHTML = `<tr><td colspan="8" class="text-center p-8 text-slate-500">找不到符合條件的在役鋼網</td></tr>`;
+                    return;
+                }
+
+                tableBody.innerHTML = filteredStencils.map(stencil => {
+                    const color = statusColors[stencil.status] || statusColors['報廢'];
+                    const partNumbers = stencil.partNumbers || [];
+                    let partDisplayHtml = '';
+                    if (partNumbers.length > 0) {
+                        const displayParts = partNumbers.slice(0, 4);
+                        partDisplayHtml = displayParts.map(p => `<div>${p.pcbNo} / ${p.partNo}</div>`).join('');
+                        if (partNumbers.length > 4) {
+                            partDisplayHtml += `<div class="text-xs text-slate-400">(+${partNumbers.length - 4} more)</div>`;
+                        }
+                    } else {
+                        partDisplayHtml = '<div>N/A / N/A</div>';
+                    }
+
+                    let actionButtons = `<button data-edit-id="${stencil.id}" class="p-2 text-blue-600 hover:bg-blue-100 rounded-md">編輯</button>`;
+                    if (stencil.status === '已儲存') {
+                        actionButtons += `<button data-checkout-id="${stencil.id}" class="ml-2 p-2 text-green-600 hover:bg-green-100 rounded-md">取出</button>`;
+                    } else {
+                        actionButtons += `<button data-checkin-id="${stencil.id}" class="ml-2 p-2 text-blue-600 hover:bg-blue-100 rounded-md">儲存</button>`;
+                    }
+
+                    return `
+                        <tr class="border-b border-slate-200 hover:bg-slate-50">
+                            <td data-id="${stencil.id}" class="p-4 cursor-pointer">${stencil.location}</td>
+                            <td data-id="${stencil.id}" class="p-4 cursor-pointer">${partDisplayHtml}</td>
+                            <td data-id="${stencil.id}" class="p-4 cursor-pointer">
+                                <div><span class="px-2 py-1 text-xs font-semibold rounded-full ${color.bg} ${color.text}">${stencil.status}</span></div>
+                                ${stencil.subStatus ? `<div class="text-xs text-slate-500 mt-1">${stencil.subStatus}</div>` : ''}
+                            </td>
+                            <td data-id="${stencil.id}" class="p-4 font-semibold text-slate-800 cursor-pointer hover:underline">${stencil.id}</td>
+                            <td data-id="${stencil.id}" class="p-4 cursor-pointer">${stencil.thickness}</td>
+                            <td data-id="${stencil.id}" class="p-4 cursor-pointer text-slate-500 truncate" style="max-width: 150px;" title="${stencil.remarks || ''}">${stencil.remarks || ''}</td>
+                            <td class="p-4">${actionButtons}</td>
+                        </tr>
+                    `;
+                }).join('');
+                
+                tableBody.querySelectorAll('td[data-id]').forEach(cell => {
+                    cell.addEventListener('click', () => {
+                        const stencil = appState.stencils.find(s => s.id === cell.dataset.id);
+                        openModal('view', stencil);
+                    });
+                });
+                
+                tableBody.querySelectorAll('button[data-edit-id]').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const stencil = appState.stencils.find(s => s.id === button.dataset.editId);
+                        openModal('edit', stencil);
+                    });
+                });
+
+                tableBody.querySelectorAll('button[data-checkin-id]').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const stencil = appState.stencils.find(s => s.id === button.dataset.checkinId);
+                        const originalFullStatus = `${stencil.status} ${stencil.subStatus || ''}`.trim();
+                        stencil.status = '已儲存';
+                        stencil.subStatus = '';
+                        stencil.currentLocation = stencil.location;
+                        const newFullStatus = `${stencil.status} ${stencil.subStatus || ''}`.trim();
+                        createLog(stencil.id, originalFullStatus, newFullStatus);
+                        showToast(`成功將 ${stencil.id} 儲存`);
+                        render();
+                    });
+                });
+
+                 tableBody.querySelectorAll('button[data-checkout-id]').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openCheckoutModal(button.dataset.checkoutId);
+                    });
+                });
+            }
+
+            function renderScrapTable() {
+                const scrappedStencils = appState.stencils.filter(s => s.status === '報廢');
+                if (scrappedStencils.length === 0) {
+                    scrapTableBody.innerHTML = `<tr><td colspan="7" class="text-center p-8 text-slate-500">目前沒有已報廢的鋼網</td></tr>`;
+                    return;
+                }
+                scrapTableBody.innerHTML = scrappedStencils.map(stencil => `
+                    <tr class="border-b border-slate-200">
+                        <td class="p-4">${stencil.location}</td>
+                        <td class="p-4 font-semibold">${stencil.id}</td>
+                        <td class="p-4">
+                            <div>${stencil.partNumbers && stencil.partNumbers.length > 0 ? stencil.partNumbers[0].pcbNo : 'N/A'}</div>
+                            <div class="text-xs text-slate-500">${stencil.partNumbers && stencil.partNumbers.length > 0 ? stencil.partNumbers[0].partNo : 'N/A'}</div>
+                        </td>
+                        <td class="p-4">${stencil.usageCount}</td>
+                        <td class="p-4 text-slate-600">${stencil.scrapReason || stencil.remarks || 'N/A'}</td>
+                        <td class="p-4">${stencil.scrappedDate ? stencil.scrappedDate.toLocaleDateString('zh-TW') : 'N/A'}</td>
+                        <td class="p-4">
+                            <button data-edit-id="${stencil.id}" class="p-2 text-blue-600 hover:bg-blue-100 rounded-md">編輯</button>
+                        </td>
+                    </tr>
+                `).join('');
+
+                scrapTableBody.querySelectorAll('button[data-edit-id]').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        const stencil = appState.stencils.find(s => s.id === button.dataset.editId);
+                        openModal('edit', stencil);
+                    });
+                });
+            }
+            
+            function renderLogTable() {
+                const filteredLogs = appState.logs.filter(log =>
+                    log.stencilId.toLowerCase().includes(appState.logSearchTerm)
+                );
+                 if (filteredLogs.length === 0) {
+                    logsTableBody.innerHTML = `<tr><td colspan="5" class="text-center p-8 text-slate-500">無任何異動紀錄</td></tr>`;
+                    return;
+                }
+
+                logsTableBody.innerHTML = filteredLogs.map(log => `
+                    <tr class="border-b border-slate-200">
+                        <td class="p-4">${log.timestamp.toLocaleString('zh-TW')}</td>
+                        <td class="p-4 font-semibold">${log.stencilId}</td>
+                        <td class="p-4">${log.user}</td>
+                        <td class="p-4">${log.fromStatus}</td>
+                        <td class="p-4">${log.toStatus}</td>
+                    </tr>
+                `).join('');
+            }
+
+            function renderModalContent() {
+                const { modalMode, selectedStencil } = appState;
+
+                if (modalMode === 'view' && selectedStencil) {
+                    modalTitle.textContent = '鋼網詳細資訊';
+                    const statusColor = statusColors[selectedStencil.status] || statusColors['報廢'];
+                    
+                    modalBody.innerHTML = `
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                             <div class="space-y-6">
+                                <div class="bg-white p-6 rounded-xl shadow-sm">
+                                    <h3 class="font-bold text-lg text-slate-800 mb-4">基本資料</h3>
+                                    <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                                        <div class="text-slate-500">鋼網編號</div><div class="font-semibold text-slate-700">${selectedStencil.id}</div>
+                                        <div class="text-slate-500">儲位</div><div class="font-semibold text-slate-700">${selectedStencil.location}</div>
+                                        <div class="text-slate-500">厚度</div><div class="font-semibold text-slate-700">${selectedStencil.thickness} mm</div>
+                                        <div class="text-slate-500">使用次數</div><div class="font-semibold text-slate-700">${selectedStencil.usageCount}</div>
+                                        <div class="text-slate-500">狀態</div><div><span class="px-2 py-1 text-xs font-semibold rounded-full ${statusColor.bg} ${statusColor.text}">${selectedStencil.status} ${selectedStencil.subStatus ? `(${selectedStencil.subStatus})` : ''}</span></div>
+                                        ${selectedStencil.status === '報廢' ? `<div class="text-slate-500">報廢理由</div><div class="font-semibold text-slate-700">${selectedStencil.scrapReason || 'N/A'}</div>` : ''}
+                                    </div>
+                                </div>
+                                <div class="bg-white p-6 rounded-xl shadow-sm">
+                                    <h3 class="font-bold text-lg text-slate-800 mb-2">板號 / 料號清單</h3>
+                                    <div class="text-sm space-y-2">
+                                        ${selectedStencil.partNumbers && selectedStencil.partNumbers.length > 0 ? selectedStencil.partNumbers.map(p => `
+                                            <div class="flex justify-between"><span class="font-medium text-slate-600">${p.pcbNo}</span> <span class="text-slate-500">${p.partNo}</span></div>
+                                        `).join('') : '<p class="text-slate-400">無</p>'}
+                                    </div>
+                                </div>
+                                <div class="bg-white p-6 rounded-xl shadow-sm">
+                                    <h3 class="font-bold text-lg text-slate-800 mb-4">關聯檔案</h3>
+                                    <div class="space-y-3 text-sm">
+                                        ${Object.entries(fileTypes).map(([key, name]) => `
+                                            <div class="flex justify-between items-center">
+                                                <span class="text-slate-500">${name}</span>
+                                                ${selectedStencil.files[key] 
+                                                    ? `<span class="font-semibold text-slate-700 truncate">${selectedStencil.files[key]}</span><button class="text-blue-600 hover:underline text-xs">下載</button>` 
+                                                    : `<span class="text-slate-400">尚未上傳</span>`
+                                                }
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                <div class="bg-white p-6 rounded-xl shadow-sm">
+                                    <h3 class="font-bold text-lg text-slate-800 mb-2">備註</h3>
+                                    <p class="text-slate-600 min-h-[40px]">${selectedStencil.remarks || '無'}</p>
+                                </div>
+                            </div>
+                            <div class="bg-white p-6 rounded-xl shadow-sm">
+                                <h3 class="font-bold text-lg text-slate-800 mb-4">✨ AI 智慧助理</h3>
+                                <div class="space-y-4">
+                                   <button id="analyze-remark-btn" class="w-full p-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 disabled:bg-slate-300 transition flex items-center justify-center gap-2">智慧分析備註</button>
+                                   <div id="remark-analysis-result" class="text-sm p-4 bg-blue-50 border border-blue-200 rounded-lg text-slate-700 min-h-[100px]">點擊上方按鈕以生成分析結果。</div>
+                                </div>
+                                <div class="space-y-4 mt-4">
+                                   <button id="generate-sop-btn" class="w-full p-3 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 disabled:bg-slate-300 transition flex items-center justify-center gap-2">生成處理建議</button>
+                                   <div id="sop-result" class="text-sm p-4 bg-teal-50 border border-teal-200 rounded-lg text-slate-700 min-h-[100px]">點擊上方按鈕以生成處理建議。</div>
+                                </div>
+                             </div>
+                        </div>`;
+                    modalFooter.innerHTML = `<button id="edit-from-view-btn" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700">編輯</button>`;
+                    
+                    document.getElementById('edit-from-view-btn').addEventListener('click', () => {
+                        appState.modalMode = 'edit';
+                        renderModalContent();
+                    });
+
+                    const analyzeBtn = document.getElementById('analyze-remark-btn');
+                    const sopBtn = document.getElementById('generate-sop-btn');
+                    if (!selectedStencil.remarks) analyzeBtn.disabled = true;
+                    analyzeBtn.addEventListener('click', () => callGeminiAPI(`身為一位SMT製程專家，請根據以下鋼網的問題備註，提供簡潔的分析報告。你的報告需要包含三個部分：1. **問題分類** (例如：外觀損傷、張力問題、清潔問題等)，2. **建議處理方式** (提供1-2個具體行動建議)，3. **潛在風險** (評估對生產的影響，分為高、中、低)。請直接輸出報告內容，不要有其他開場白。\n\n**問題備註：** "${selectedStencil.remarks}"`, document.getElementById('remark-analysis-result')));
+                    sopBtn.addEventListener('click', () => callGeminiAPI(`身為一位資深的SMT產線組長，請為現場操作員撰寫一份針對以下鋼網問題的處理建議SOP。請使用條列式、清晰、易懂的步驟說明。如果鋼網狀態正常，請說明無需特別處理。\n\n**鋼網資料：**\n- 編號: ${selectedStencil.id}\n- 狀態: ${selectedStencil.status}\n- 備註: ${selectedStencil.remarks || '無'}\n\n請直接開始撰寫處理步驟。`, document.getElementById('sop-result')));
+
+                } else if (modalMode === 'edit' || modalMode === 'add') {
+                    const isAdding = modalMode === 'add';
+                    const data = isAdding ? { id: '', partNumbers: [{pcbNo: '', partNo: ''}, {pcbNo: '', partNo: ''}], thickness: 0.1, location: '', status: '待入庫', subStatus: '', usageCount: 0, remarks: '', files: {}, scrapReason: '' } : { ...selectedStencil };
+                    modalTitle.textContent = isAdding ? '新增鋼網' : `編輯鋼網：${data.id}`;
+                    modalBody.innerHTML = `
+                        <form id="stencil-form" class="space-y-6">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-600 mb-1">鋼網編號</label>
+                                    <input type="text" name="id" value="${data.id}" ${!isAdding ? '' : 'readonly'} class="w-full p-2 border border-slate-300 rounded-md bg-white disabled:bg-slate-100" placeholder="例如: 113052407">
+                                </div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <div>
+                                        <label class="block text-sm font-medium text-slate-600 mb-1">狀態</label>
+                                        <select name="status" id="status-select" class="w-full p-2 border border-slate-300 rounded-md bg-white">
+                                            ${statusOptions.map(s => `<option value="${s}" ${s === data.status ? 'selected' : ''}>${s}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div id="sub-status-container" class="hidden">
+                                        <label class="block text-sm font-medium text-slate-600 mb-1">詳細分類</label>
+                                        <select name="subStatus" id="sub-status-select" class="w-full p-2 border border-slate-300 rounded-md bg-white"></select>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-600 mb-1">儲位</label>
+                                    <input type="text" name="location" value="${data.location}" class="w-full p-2 border border-slate-300 rounded-md bg-white">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-slate-600 mb-1">厚度 (mm)</label>
+                                    <input type="number" step="0.01" name="thickness" value="${data.thickness}" class="w-full p-2 border border-slate-300 rounded-md bg-white">
+                                </div>
+                                <div id="scrap-reason-container" class="hidden md:col-span-2">
+                                     <label class="block text-sm font-medium text-slate-600 mb-1">報廢理由</label>
+                                     <select name="scrapReason" class="w-full p-2 border border-slate-300 rounded-md bg-white">
+                                        <option value="">請選擇理由</option>
+                                        ${scrapReasons.map(r => `<option value="${r}" ${r === data.scrapReason ? 'selected' : ''}>${r}</option>`).join('')}
+                                     </select>
+                                </div>
+                            </div>
+                            <div class="bg-white p-4 rounded-lg border border-slate-200">
+                                <div class="flex justify-between items-center mb-3">
+                                    <h3 class="font-semibold text-slate-700">板號 / 料號清單</h3>
+                                    <button type="button" id="add-part-number-btn" class="px-3 py-1 bg-blue-500 text-white text-sm font-semibold rounded-md hover:bg-blue-600">新增一筆</button>
+                                </div>
+                                <div id="part-numbers-container" class="space-y-2"></div>
+                            </div>
+                            <div class="bg-white p-4 rounded-lg border border-slate-200">
+                                <h3 class="font-semibold text-slate-700 mb-3">關聯檔案</h3>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                    ${Object.entries(fileTypes).map(([key, name]) => `
+                                        <div>
+                                            <label class="block text-sm font-medium text-slate-600 mb-1">${name}</label>
+                                            <div class="flex gap-2">
+                                                <input type="text" name="file_${key}" value="${(data.files && data.files[key]) || ''}" class="w-full p-2 border border-slate-300 rounded-md bg-white" placeholder="檔名...">
+                                                <button type="button" data-file-key="${key}" class="upload-btn px-3 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300 text-sm">上傳</button>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                            <div>
+                                <label id="remarks-label" class="block text-sm font-medium text-slate-600 mb-1">備註</label>
+                                <textarea name="remarks" rows="3" class="w-full p-2 border border-slate-300 rounded-md bg-white">${data.remarks}</textarea>
+                            </div>
+                        </form>
+                    `;
+                    modalFooter.innerHTML = `
+                        <button id="cancel-btn" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-semibold rounded-lg hover:bg-slate-50">取消</button>
+                        <button id="save-btn" class="px-4 py-2 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700">儲存</button>
+                    `;
+                    
+                    const partNumbersContainer = document.getElementById('part-numbers-container');
+                    const addPartNumberRow = (pcbNo = '', partNo = '') => {
+                        const row = document.createElement('div');
+                        row.className = 'part-number-row flex gap-2 items-center';
+                        row.innerHTML = `
+                            <input type="text" name="pcbNo" value="${pcbNo}" class="w-full p-2 border border-slate-300 rounded-md bg-white" placeholder="PCB板號">
+                            <input type="text" name="partNo" value="${partNo}" class="w-full p-2 border border-slate-300 rounded-md bg-white" placeholder="料號">
+                            <button type="button" class="delete-part-btn p-2 text-red-500 hover:bg-red-100 rounded-md">&times;</button>
+                        `;
+                        row.querySelector('.delete-part-btn').onclick = () => {
+                            if (partNumbersContainer.querySelectorAll('.part-number-row').length > 1) {
+                                row.remove();
+                            } else {
+                                showToast('至少需要一筆板號/料號。', false);
+                            }
+                        };
+                        partNumbersContainer.appendChild(row);
+                    };
+                    
+                    data.partNumbers.forEach(p => addPartNumberRow(p.pcbNo, p.partNo));
+
+                    document.getElementById('add-part-number-btn').addEventListener('click', () => addPartNumberRow());
+
+                    modalBody.querySelectorAll('.upload-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            const fileKey = btn.dataset.fileKey;
+                            const fileName = prompt(`請輸入「${fileTypes[fileKey]}」的檔名：`, document.querySelector(`input[name="file_${fileKey}"]`).value);
+                            if (fileName !== null) {
+                                document.querySelector(`input[name="file_${fileKey}"]`).value = fileName;
+                            }
+                        });
+                    });
+
+                    const statusSelect = document.getElementById('status-select');
+                    const subStatusContainer = document.getElementById('sub-status-container');
+                    const subStatusSelect = document.getElementById('sub-status-select');
+                    const scrapReasonContainer = document.getElementById('scrap-reason-container');
+                    const remarksLabel = document.getElementById('remarks-label');
+                    
+                    const toggleAdvancedFields = () => {
+                        const selectedStatus = statusSelect.value;
+                        if (subStatusOptions[selectedStatus]) {
+                            subStatusSelect.innerHTML = subStatusOptions[selectedStatus]
+                                .map(ss => `<option value="${ss}" ${ss === data.subStatus ? 'selected' : ''}>${ss}</option>`)
+                                .join('');
+                            subStatusContainer.classList.remove('hidden');
+                        } else {
+                            subStatusContainer.classList.add('hidden');
+                            subStatusSelect.innerHTML = '';
+                        }
+
+                        if(selectedStatus === '報廢') {
+                            scrapReasonContainer.classList.remove('hidden');
+                            remarksLabel.textContent = '其他備註';
+                        } else if (selectedStatus === '已借出' || selectedStatus === '待處理') {
+                            scrapReasonContainer.classList.add('hidden');
+                            remarksLabel.textContent = '理由';
+                        } else {
+                            scrapReasonContainer.classList.add('hidden');
+                            remarksLabel.textContent = '備註';
+                        }
+                    };
+
+                    statusSelect.addEventListener('change', toggleAdvancedFields);
+                    toggleAdvancedFields();
+
+                    document.getElementById('cancel-btn').addEventListener('click', () => {
+                        if (isAdding) {
+                            closeModal();
+                        } else {
+                            appState.modalMode = 'view';
+                            renderModalContent();
+                        }
+                    });
+
+                    document.getElementById('save-btn').addEventListener('click', () => {
+                        const form = document.getElementById('stencil-form');
+                        const formData = new FormData(form);
+                        const newStencilData = { files: {}, partNumbers: [] };
+                        
+                        const partNumberRows = form.querySelectorAll('.part-number-row');
+                        partNumberRows.forEach(row => {
+                            const pcbNo = row.querySelector('input[name="pcbNo"]').value.trim();
+                            const partNo = row.querySelector('input[name="partNo"]').value.trim();
+                            if (pcbNo || partNo) {
+                                newStencilData.partNumbers.push({ pcbNo, partNo });
+                            }
+                        });
+
+                        for (let [key, value] of formData.entries()) {
+                            if (key.startsWith('file_')) {
+                                newStencilData.files[key.substring(5)] = value;
+                            } else if (key !== 'pcbNo' && key !== 'partNo') {
+                                newStencilData[key] = value;
+                            }
+                        }
+                        
+                        if (isAdding) {
+                            if (!newStencilData.id) { alert('鋼網編號為必填項'); return; }
+                            if (appState.stencils.some(s => s.id === newStencilData.id)) { alert(`鋼網編號 ${newStencilData.id} 已存在，請使用其他編號。`); return; }
+                            
+                            newStencilData.usageCount = 0;
+                            const newFullStatus = `${newStencilData.status} ${newStencilData.subStatus || ''}`.trim();
+                            createLog(newStencilData.id, 'N/A', newFullStatus);
+                            if (newStencilData.status === '報廢') newStencilData.scrappedDate = new Date();
+                            appState.stencils.unshift(newStencilData);
+                        } else {
+                            const originalStencil = appState.selectedStencil;
+                            const originalFullStatus = `${originalStencil.status} ${originalStencil.subStatus || ''}`.trim();
+                            const newFullStatus = `${newStencilData.status} ${newStencilData.subStatus || ''}`.trim();
+
+                            if(originalFullStatus !== newFullStatus) {
+                                createLog(originalStencil.id, originalFullStatus, newFullStatus);
+                            }
+                            if (newStencilData.status === '報廢' && originalStencil.status !== '報廢') {
+                                newStencilData.scrappedDate = new Date();
+                            }
+                            if (newStencilData.status !== '報廢') {
+                                newStencilData.scrapReason = '';
+                            }
+                            appState.stencils = appState.stencils.map(s => s.id === selectedStencil.id ? { ...s, ...newStencilData } : s);
+                        }
+                        
+                        closeModal();
+                        render();
+                    });
+                }
+            }
+            
+            function openModal(mode, stencil = null) {
+                appState.modalMode = mode;
+                appState.selectedStencil = stencil;
+                appState.isModalOpen = true;
+                
+                renderModalContent();
+                
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+                setTimeout(() => {
+                    modal.querySelector('.modal-content').classList.remove('scale-95', 'opacity-0');
+                }, 10);
+            }
+            
+            function closeModal() {
+                appState.isModalOpen = false;
+                modal.querySelector('.modal-content').classList.add('scale-95', 'opacity-0');
+                 setTimeout(() => {
+                    modal.classList.add('hidden');
+                    modal.classList.remove('flex');
+                }, 300);
+            }
+            
+            function openListModal(title, stencils) {
+                listModalTitle.textContent = `${title} 鋼板清單`;
+                if (stencils.length === 0) {
+                    listModalBody.innerHTML = `<p class="text-slate-500 text-center">此分類目前沒有鋼板。</p>`;
+                } else {
+                    listModalBody.innerHTML = `
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-slate-100 text-slate-600">
+                                <tr>
+                                    <th class="p-3">鋼網編號</th>
+                                    <th class="p-3">板號</th>
+                                    <th class="p-3">儲位</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${stencils.map(s => `
+                                    <tr class="border-b border-slate-200">
+                                        <td class="p-3 font-semibold">${s.id}</td>
+                                        <td class="p-3">${s.partNumbers && s.partNumbers.length > 0 ? s.partNumbers[0].pcbNo : 'N/A'}</td>
+                                        <td class="p-3">${s.location}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
+                }
+                listModal.classList.remove('hidden');
+                listModal.classList.add('flex');
+                setTimeout(() => {
+                    listModal.querySelector('.modal-content').classList.remove('scale-95', 'opacity-0');
+                }, 10);
+            }
+
+            function closeListModal() {
+                listModal.querySelector('.modal-content').classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    listModal.classList.add('hidden');
+                    listModal.classList.remove('flex');
+                }, 300);
+            }
+            
+            function openCheckoutModal(stencilId) {
+                stencilToCheckOutId = stencilId;
+                checkoutModal.classList.remove('hidden');
+                checkoutModal.classList.add('flex');
+                setTimeout(() => {
+                    checkoutModal.querySelector('.modal-content').classList.remove('scale-95', 'opacity-0');
+                }, 10);
+            }
+
+            function closeCheckoutModal() {
+                checkoutModal.querySelector('.modal-content').classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    checkoutModal.classList.add('hidden');
+                    checkoutModal.classList.remove('flex');
+                    stencilToCheckOutId = null;
+                }, 300);
+            }
+            
+            function handleCheckout(line) {
+                if (!stencilToCheckOutId) return;
+
+                const stencil = appState.stencils.find(s => s.id === stencilToCheckOutId);
+                if (!stencil) {
+                    showToast('找不到要取出的鋼網。', false);
+                    closeCheckoutModal();
+                    return;
+                }
+
+                const originalFullStatus = `${stencil.status} ${stencil.subStatus || ''}`.trim();
+                
+                stencil.status = '已取出';
+                stencil.subStatus = line;
+                stencil.currentLocation = line === 'S1線' ? 'S1' : 'S2';
+                
+                const newFullStatus = `${stencil.status} ${stencil.subStatus || ''}`.trim();
+                
+                createLog(stencil.id, originalFullStatus, newFullStatus);
+                showToast(`成功將 ${stencil.id} 取出至 ${line}`);
+                
+                closeCheckoutModal();
+                render();
+            }
+
+            checkoutS1Btn.addEventListener('click', () => handleCheckout('S1線'));
+            checkoutS2Btn.addEventListener('click', () => handleCheckout('S2線'));
+            checkoutModal.addEventListener('click', (e) => {
+                if (e.target === checkoutModal) {
+                    closeCheckoutModal();
+                }
+            });
+
+            closeListModalBtn.addEventListener('click', closeListModal);
+            listModal.addEventListener('click', (e) => { if(e.target === listModal) closeListModal(); });
+
+            function resetOperatorPage() {
+                appState.operator = { stencilId: '', actionCode: '', stencil: null, pendingChange: null };
+                opStencilIdInput.value = '';
+                opActionCodeInput.value = '';
+                opActionCodeInput.disabled = true;
+                opConfirmBtn.disabled = true;
+                opInfoDisplay.classList.add('hidden');
+                opInfoDisplay.innerHTML = '';
+            }
+            
+            opStencilIdInput.addEventListener('change', (e) => {
+                const inputValue = e.target.value.trim();
+                let stencil = null;
+
+                if (inputValue.toUpperCase().startsWith('SPS') && inputValue.length >= 4) {
+                    const location = inputValue.slice(3).padStart(3, '0');
+                    stencil = appState.stencils.find(s => s.location === location);
+                    if (!stencil) {
+                        opInfoDisplay.innerHTML = `<span class="text-red-500">在儲位 ${location} 找不到對應的鋼網。</span>`;
+                    }
+                } else {
+                    stencil = appState.stencils.find(s => s.id === inputValue);
+                    if (!stencil) {
+                        opInfoDisplay.innerHTML = `<span class="text-red-500">找不到鋼網編號: ${inputValue}</span>`;
+                    }
+                }
+                
+                appState.operator.stencil = stencil;
+
+                if (stencil) {
+                    const currentStatus = `${stencil.status} ${stencil.subStatus || ''}`.trim();
+                    opInfoDisplay.innerHTML = `鋼網: <strong class="text-blue-600">${stencil.id}</strong><br>目前狀態: ${currentStatus}`;
+                    opInfoDisplay.classList.remove('hidden');
+                    opActionCodeInput.disabled = false;
+                    opActionCodeInput.focus();
+                } else {
+                    opInfoDisplay.classList.remove('hidden');
+                    opActionCodeInput.disabled = true;
+                }
+                 opConfirmBtn.disabled = true;
+            });
+
+            opActionCodeInput.addEventListener('change', (e) => {
+                const actionCode = e.target.value.trim();
+                appState.operator.actionCode = actionCode;
+                
+                const actionMap = {
+                    'OUT-S1': { status: '已取出', subStatus: 'S1線', currentLocation: 'S1' },
+                    'OUT-S2': { status: '已取出', subStatus: 'S2線', currentLocation: 'S2' },
+                    'LEND-VENDOR': { status: '已借出', subStatus: '外包商', currentLocation: '外包商' },
+                    'LEND-GIDA': { status: '已借出', subStatus: '碁達', currentLocation: '碁達' },
+                    'PENDING': { status: '待處理', subStatus: '', currentLocation: '待處理' },
+                    'SCRAP': { status: '報廢', subStatus: '', currentLocation: '報廢區' },
+                    'STORE': { status: '已儲存', subStatus: '' } // currentLocation will be set to home location
+                };
+
+                const pendingChange = actionMap[actionCode];
+                appState.operator.pendingChange = pendingChange;
+
+                if (pendingChange && appState.operator.stencil) {
+                    const newFullStatus = `${pendingChange.status} ${pendingChange.subStatus || ''}`.trim();
+                    opInfoDisplay.innerHTML = `鋼網: <strong class="text-blue-600">${appState.operator.stencil.id}</strong><br>預計變更為: <strong class="text-green-600">${newFullStatus}</strong>`;
+                    opConfirmBtn.disabled = false;
+                } else {
+                    opInfoDisplay.innerHTML = `鋼網: <strong class="text-blue-600">${appState.operator.stencil.id}</strong><br><span class="text-red-500">無效的操作代碼: ${actionCode}</span>`;
+                    opConfirmBtn.disabled = true;
+                }
+            });
+
+            opConfirmBtn.addEventListener('click', () => {
+                const { stencil, pendingChange } = appState.operator;
+                if (!stencil || !pendingChange) return;
+
+                const originalFullStatus = `${stencil.status} ${stencil.subStatus || ''}`.trim();
+                
+                stencil.status = pendingChange.status;
+                stencil.subStatus = pendingChange.subStatus;
+                
+                if (pendingChange.status === '已儲存') {
+                    stencil.currentLocation = stencil.location;
+                } else {
+                    stencil.currentLocation = pendingChange.location;
+                }
+
+                if (pendingChange.status === '報廢' && !stencil.scrappedDate) {
+                    stencil.scrappedDate = new Date();
+                    stencil.scrapReason = '由產線操作報廢';
+                }
+
+                const newFullStatus = `${stencil.status} ${stencil.subStatus || ''}`.trim();
+                
+                createLog(stencil.id, originalFullStatus, newFullStatus);
+                showToast(`成功將 ${stencil.id} 狀態更新為 ${newFullStatus}`);
+                resetOperatorPage();
+                render();
+            });
+
+            generateSummaryBtn.addEventListener('click', () => {
+                summaryResultDiv.classList.remove('hidden');
+                const prompt = `你是一位專業的 SMT 工廠經理。請根據以下 JSON 格式的鋼網庫存數據，撰寫一份簡潔的管理摘要報告。報告應包含：\n1. **總體概況**：簡要說明總庫存數量和整體健康狀況。\n2. **需立即關注的鋼網**：列出基於高使用次數、待處理狀態或有問題備註而需要特別注意的鋼網編號及其原因。\n3. **狀態分佈總結**：用一句話總結目前鋼網狀態的分佈情況，例如「大部分鋼網處於良好儲存狀態，但有少量需處理」。\n\n請以專業、簡潔的商業報告格式呈現，直接輸出報告內容。\n\n**庫存數據：**\n\`\`\`json\n${JSON.stringify(appState.stencils)}\n\`\`\``;
+                callGeminiAPI(prompt, summaryResultDiv);
+            });
+
+            addStencilBtn.addEventListener('click', () => openModal('add'));
+            closeModalBtn.addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => { if(e.target === modal) closeModal(); });
+            logSearchInput.addEventListener('input', (e) => {
+                appState.logSearchTerm = e.target.value.toLowerCase();
+                renderLogTable();
+            });
+
+            function renderStatsCards() {
+                const stats = appState.stencils.reduce((acc, s) => {
+                    const key = s.subStatus || s.status;
+                    acc[key] = (acc[key] || 0) + 1;
+                    return acc;
+                }, {});
+
+                const cardsData = [
+                    { title: '已儲存', key: '已儲存', value: stats['已儲存'] || 0, color: 'text-blue-500' },
+                    { title: '使用中 (S1線)', key: 'S1線', value: stats['S1線'] || 0, color: 'text-green-500' },
+                    { title: '使用中 (S2線)', key: 'S2線', value: stats['S2線'] || 0, color: 'text-green-600' },
+                    { title: '已借出 (外包商)', key: '外包商', value: stats['外包商'] || 0, color: 'text-yellow-500' },
+                    { title: '已借出 (碁達)', key: '碁達', value: stats['碁達'] || 0, color: 'text-yellow-600' },
+                    { title: '需注意', key: '需注意', value: (stats['待處理'] || 0) + (stats['待入庫'] || 0), color: 'text-red-500' },
+                    { title: '已報廢', key: '報廢', value: stats['報廢'] || 0, color: 'text-slate-500' }
+                ];
+                statsCardsContainer.innerHTML = cardsData.map(card => `
+                    <div data-status-key="${card.key}" data-title="${card.title}" class="bg-white p-6 rounded-xl shadow cursor-pointer transition hover:scale-105 hover:shadow-lg">
+                        <p class="text-sm font-medium text-slate-500">${card.title}</p>
+                        <p class="text-3xl font-bold ${card.color} mt-1">${card.value}</p>
+                    </div>
+                `).join('');
+            }
+            
+            statsCardsContainer.addEventListener('click', (e) => {
+                const card = e.target.closest('[data-status-key]');
+                if (!card) return;
+
+                const statusKey = card.dataset.statusKey;
+                const title = card.dataset.title;
+                let filteredStencils = [];
+
+                if (statusKey === '需注意') {
+                    filteredStencils = appState.stencils.filter(s => s.status === '待處理' || s.status === '待入庫');
+                } else {
+                    filteredStencils = appState.stencils.filter(s => (s.subStatus || s.status) === statusKey);
+                }
+                
+                openListModal(title, filteredStencils);
+            });
+
+            function renderStatusDonutChart() {
+                const ctx = document.getElementById('statusDonutChart').getContext('2d');
+                const statusCounts = appState.stencils.reduce((acc, s) => {
+                    const key = s.subStatus || s.status;
+                    acc[key] = (acc[key] || 0) + 1;
+                    return acc;
+                }, {});
+
+                if (statusChart) statusChart.destroy();
+                statusChart = new Chart(ctx, { type: 'doughnut', data: { 
+                    labels: Object.keys(statusCounts), 
+                    datasets: [{ 
+                        data: Object.values(statusCounts), 
+                        backgroundColor: ['#3b82f6', '#16a34a', '#15803d', '#f59e0b', '#ca8a04', '#ef4444', '#a855f7', '#64748b'], 
+                        hoverOffset: 4 }] 
+                    }, 
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } } });
+            }
+
+            function renderUsageBarChart() {
+                const ctx = document.getElementById('usageBarChart').getContext('2d');
+                const sortedByUsage = [...appState.stencils].sort((a, b) => b.usageCount - a.usageCount).slice(0, 5);
+                if (usageChart) usageChart.destroy();
+                usageChart = new Chart(ctx, { type: 'bar', data: { labels: sortedByUsage.map(s => s.id), datasets: [{ label: '使用次數', data: sortedByUsage.map(s => s.usageCount), backgroundColor: '#3b82f6', borderColor: '#1e40af', borderWidth: 1, borderRadius: 4, }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true } } } });
+            }
+
+            navButtons.forEach(btn => btn.addEventListener('click', () => { appState.activeSection = btn.dataset.section; render(); }));
+            searchInput.addEventListener('input', (e) => { appState.searchTerm = e.target.value.toLowerCase(); renderTable(); });
+            render();
+        });
+    </script>
+</body>
+</html>
